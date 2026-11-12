@@ -15,7 +15,7 @@ export function parseCell(value, spreadsheet = window.XLSX) {
   }
   return null;
 }
-const normHead = value => String(value ?? '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+const normHead = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 export function detectColumns(rows) {
   let headerRow = -1;
   for (let i = 0; i < Math.min(rows.length, 30); i++) {
@@ -44,7 +44,18 @@ export function detectColumns(rows) {
     }
     return null;
   };
-  const salon = groupStart('salon');
+  // La télécommande / sonde d'ambiance est exportée dans le groupe « Asst » :
+  // Type/Zone = ASSIS/01, Id = identifiant radio, Data1 = température, Data2 = humidité relative.
+  const assistant = groupStart('asst');
+  const assistantType = assistant == null ? null : assistant;
+  const assistantId = assistant == null ? null : assistant + 1;
+  const assistantData1 = assistant == null ? null : assistant + 2;
+  const assistantData2 = assistant == null ? null : assistant + 3;
+  const hasAssistantFields = assistant != null
+    && normHead(header[assistantType]) === 'typezone'
+    && normHead(header[assistantId]) === 'id'
+    && normHead(header[assistantData1]) === 'data1'
+    && normHead(header[assistantData2]) === 'data2';
   const preheat = groupStart('p0sortieresitance') ?? groupStart('p0sortieresistance');
   const outside = groupStart('p1entreeair');
   return {
@@ -59,8 +70,8 @@ export function detectColumns(rows) {
     filter: find(x => x.includes('etatfiltre')),
     mode: find(x => x === 'mode'),
     season: find(x => x === 'saison'),
-    salonT: fieldIn(salon, 'temp'),
-    salonH: fieldIn(salon, 'rh'),
+    salonT: hasAssistantFields ? assistantData1 : null,
+    salonH: hasAssistantFields ? assistantData2 : null,
     preheatT: fieldIn(preheat, 'temp'),
     preheatH: fieldIn(preheat, 'rh'),
     outsideT: fieldIn(outside, 'temp'),
