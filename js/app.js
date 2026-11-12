@@ -1,10 +1,15 @@
 import { DAY, pad, localDay, dayStart, shiftDay, fmt, num, MIN_VALID, HIST_MAX } from './modules/date-utils.js';
-import { SVC_C, CH_C, SVC_T, CH_T, crc, frame, timeFrame, hex } from './modules/bluetooth-protocol.js';
+import { $, sleep, APP_VERSION } from './modules/core.js';
+import { createStore } from './modules/store.js';
+import { median } from './modules/analysis.js';
+import { renderCharts } from './modules/charts.js';
+import { SVC_C, CH_C, SVC_T, CH_T, crc, frame, timeFrame, hex } from './modules/ble.js';
+import { armDownloadTimeout } from './modules/sync.js';
+import { parseCell, recFrom, dayNumber } from './modules/dataio.js';
 import { absoluteHumidity, dewPoint, psychro, validTemp } from './modules/psychrometry.js';
-import { renderCharts } from './modules/chart-renderer.js';
 
 'use strict';
-const APP_VERSION='13';
+
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{})}
 
 /* Protocole Bluetooth : UUID, registres et positions d'octets déduits d'une capture réelle de VMI+. */
@@ -12,7 +17,7 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch
 
 
 
-const $=id=>document.getElementById(id);
+
 const errors=[];
 function recordError(m){
  errors.push(new Date().toLocaleTimeString('fr-FR')+' '+m);if(errors.length>30)errors.shift();
@@ -20,7 +25,7 @@ function recordError(m){
 }
 window.addEventListener('error',e=>recordError('Erreur : '+(e.message||(e.error&&e.error.message)||'inconnue')+(e.filename?' ('+String(e.filename).split('/').pop()+':'+e.lineno+')':'')));
 window.addEventListener('unhandledrejection',e=>recordError('Promesse rejetée : '+((e.reason&&e.reason.message)||e.reason)));
-const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
 
 
 
@@ -37,6 +42,7 @@ let meta={},cur={},lastSeen={},live=[],hist=[],source='hist',selectedDate=null,d
 let logLines=[],dlFrames=0;
 let download={on:false,rows:[],buf:'',total:0,sigs:new Set(),got:false,lastPacket:0,timeout:null};
 const DB='VMI_PUREVENT_DB',STORE='data';
+const { get: dbGet, set: dbSet } = createStore({ databaseName: DB, storeName: STORE, onError: message => log(message) });
 const connected=()=>!!(chC&&dev&&dev.gatt&&dev.gatt.connected);
 
 function showError(e){$('err').textContent=e?String(e.message||e):''}
@@ -44,19 +50,6 @@ function renderLog(){const p=$('log');p.textContent=logLines.slice(-70).join('\n
 function log(s){logLines.push(`${new Date().toLocaleTimeString('fr-FR')} ${s}`);if(logLines.length>300)logLines.shift();if($('logDetails').open)renderLog()}
 $('logDetails').addEventListener('toggle',()=>{if($('logDetails').open)renderLog()});
 function setStatus(s,isConnected=false){$('st').textContent=s;$('bleState').textContent=isConnected?'Connecté':'Déconnecté';$('conn').disabled=isConnected;$('disc').disabled=!isConnected}
-
-/* Stockage local (IndexedDB) */
-function openDB(){
- return new Promise((resolve,reject)=>{
-  const req=indexedDB.open(DB,1);
-  req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE)};
-  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
- });
-}
-let dbPromise=null;
-async function db(){if(!dbPromise)dbPromise=openDB().catch(e=>{dbPromise=null;throw e});return dbPromise}
-async function dbGet(k){try{const d=await db();return await new Promise((res,rej)=>{const r=d.transaction(STORE,'readonly').objectStore(STORE).get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}catch(e){log('IndexedDB lecture : '+e.message);return null}}
-async function dbSet(k,v){try{const d=await db();await new Promise((res,rej)=>{const tx=d.transaction(STORE,'readwrite');tx.objectStore(STORE).put(v,k);tx.oncomplete=res;tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error)})}catch(e){log('IndexedDB écriture : '+e.message)}}
 
 /* Reprise des données des anciennes versions (heure affichée mémorisée comme de l'UTC) */
 const wallUtcToLocal=t=>{const d=new Date(t);return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),d.getUTCHours(),d.getUTCMinutes(),d.getUTCSeconds()).getTime()};
@@ -165,7 +158,7 @@ function handleNotification(ev){
   const lines=download.buf.split('\n');download.buf=lines.pop();lines.forEach(parseDownloadLine);
   if(download.on){
    $('dlp').textContent=`${download.rows.length} nouvelles lignes (${a[9]|(a[10]<<8)} / ${download.total||'?'} lues)`;
-   armDownloadTimeout();
+   armTimer();
    if(a[13]===1){if(download.buf.trim())parseDownloadLine(download.buf);finishDownload(false)}
   }
   return;
@@ -304,24 +297,7 @@ $('clk').onclick=setClock;
    - l'export tableur inverse jour et mois dans les cellules de type date (jour ≤ 12) ;
    - surtout, la VMI date parfois ses relevés avec une horloge fausse (par ex. avril 2018) pendant des périodes
      entières. Son compteur « jours de fonctionnement » reste juste : on s'en sert pour retrouver la vraie date. */
-function parseCell(v){
- if(typeof v==='number'&&v>30000&&window.XLSX){
-  const c=XLSX.SSF.parse_date_code(v);if(!c)return null;
-  const sw=c.d<=12,Y=c.y,Mo=sw?c.d:c.m,Da=sw?c.m:c.d,S=Math.round(c.S);
-  return {t:new Date(Y,Mo-1,Da,c.H,c.M,S).getTime(),rk:`${pad(Da)}/${pad(Mo)}/${Y} ${pad(c.H)}:${pad(c.M)}:${pad(S)}`};
- }
- if(typeof v==='string'){
-  const m=v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if(m)return {t:new Date(+m[3],+m[2]-1,+m[1],+m[4],+m[5],+(m[6]||0)).getTime(),rk:`${pad(+m[1])}/${pad(+m[2])}/${m[3]} ${pad(+m[4])}:${m[5]}:${pad(+(m[6]||0))}`};
- }
- return null;
-}
-function recFrom(r){
- const p=parseCell(r[0]);if(!p)return null;
- const rec={t:p.t,rk:p.rk,d:num(r[11]),st:num(r[117]),sh:num(r[118]),t1:num(r[40]),h1:num(r[41]),te:num(r[43]),he:num(r[44]),rpm:num(r[25]),fil:num(r[20]),vit:null,boost:null,hol:null};
- return ['st','sh','t1','h1','te','he','rpm','fil'].some(k=>rec[k]!=null)?rec:null;
-}
-const dayNo=t=>{const d=new Date(t);return Math.floor(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/DAY)};
+const dayNo=dayNumber;
 const modeOf=a=>{const m=new Map();let best,bc=0;for(const x of a){const c=(m.get(x)||0)+1;m.set(x,c);if(c>bc){bc=c;best=x}}return best};
 /* Corrige en place les relevés datés d'avant 2025. Retourne {fixed, kept}. */
 function fixClock(recs){
@@ -362,7 +338,7 @@ function parseDownloadLine(line){
  if(download.sigs.size&&download.sigs.has(p.rk+'|'+num(f[11]))){finishDownload(true);return}
  const rec=recFrom(f);if(rec)download.rows.push(rec);
 }
-function armDownloadTimeout(){clearTimeout(download.timeout);download.timeout=setTimeout(()=>{if(download.on)finishDownload(false,true)},20000)}
+function armTimer(){armDownloadTimeout(download,finishDownload)}
 function finishDownload(reachedCut,timeout=false){
  if(!download.on)return;
  download.on=false;clearTimeout(download.timeout);
@@ -382,7 +358,7 @@ async function startDownload(auto=false){
  $('dlp').textContent=auto?'Téléchargement automatique de l’historique…':'Démarrage du téléchargement…';
  const ok=await setClock();
  if(!ok){download.on=false;$('dlh').disabled=false;setCommandsDisabled(false);return}
- await send(0x2c,0);await send(0x20,0);await send(0x22,0);armDownloadTimeout();
+ await send(0x2c,0);await send(0x20,0);await send(0x22,0);armTimer();
 }
 $('dlh').onclick=()=>startDownload(false);
 function autoHistory(){
@@ -551,7 +527,6 @@ function selectedData(){
  return data;
 }
 /* Comparaison prudente par vitesse (médianes) */
-function median(a){const x=a.filter(Number.isFinite).sort((p,q)=>p-q);if(!x.length)return null;const m=Math.floor(x.length/2);return x.length%2?x[m]:(x[m-1]+x[m])/2}
 function analyzeSpeeds(data){
  const min=Number($('minSamples').value),target=Number($('targetRH').value);
  const rows=data.filter(r=>Number.isFinite(r.vit)&&r.vit>=1&&r.vit<=3&&Number.isFinite(r.sh)&&Number.isFinite(r.st));

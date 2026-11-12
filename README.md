@@ -39,3 +39,19 @@ Fermer VMI+ avant de se connecter : la VMI n'accepte qu'une seule connexion simu
 7. Commandes manuelles, en vérifiant leur effet réel sur la VMI.
 
 La version modulaire doit être validée sur l'appareil avant de remplacer l'application utilisée au quotidien.
+
+
+## Organisation JavaScript (v13)
+
+Le point d'entrée reste `js/app.js`. Les responsabilités sont réparties dans les modules :
+
+- `core.js` : utilitaires communs et version de l'application.
+- `analysis.js` : statistiques et médianes.
+- `store.js` : persistance IndexedDB.
+- `charts.js` : point d'entrée du rendu graphique.
+- `ble.js` : protocole et trames Bluetooth (UUID, CRC, commandes).
+- `sync.js` : temporisation du téléchargement de l'historique.
+- `dataio.js` : lecture des dates et conversion des lignes CSV/tableur.
+- `app.js` : orchestration de l'interface et coordination des modules.
+
+Les modules historiques `date-utils.js`, `psychrometry.js`, `bluetooth-protocol.js` et `chart-renderer.js` sont conservés pour limiter les changements et préserver les calculs et le protocole de la v13.
