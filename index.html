@@ -82,18 +82,19 @@
 </section>
 
 <section class="card">
- <h2>Aide au réglage</h2>
+ <h2>Aide au réglage manuel</h2>
+ <p class="sub">L’application analyse les mesures et propose une piste. Elle ne change jamais la vitesse à ta place.</p>
  <div id="recommendation" class="advice">Connecte la VMI ou importe un historique pour obtenir une première analyse.</div>
  <div class="row">
   <label for="targetRH">Objectif d'humidité relative :</label>
   <select id="targetRH"><option value="45">45 %</option><option value="50" selected>50 %</option><option value="55">55 %</option><option value="60">60 %</option>
   </select>
-  <label for="minSamples">Minimum de relevés par vitesse :</label>
+  <label for="minSamples">Relevés minimum par vitesse :</label>
   <select id="minSamples"><option value="5">5</option><option value="10" selected>10</option><option value="20">20</option><option value="30">30</option></select>
  </div>
  <h3>Comparaison observée selon la vitesse</h3>
  <div id="speedAnalysis" class="status">Pas encore assez de données.</div>
- <p class="note">Les recommandations sont indicatives. Pour conclure sur l'efficacité d'une vitesse, il faut comparer des périodes suffisamment longues et comparables (occupation, météo, cuisson, douches, fenêtres ouvertes). Sans mesure de débit et de consommation électrique, l'application ne peut pas calculer un optimum énergétique réel.</p>
+ <p class="note">Pour comparer les trois vitesses, il faut au minimum le nombre de relevés choisi et 12 heures de données par vitesse. Compare si possible des périodes avec une météo et une occupation similaires. Sans mesure de débit d’air ni de consommation électrique, l’application ne peut pas calculer la vitesse la plus économe ni prouver l’efficacité réelle de la ventilation. Ne modifie la vitesse que manuellement.</p>
 </section>
 
 <section class="card">
