@@ -41,6 +41,8 @@ let manualDisconnect=false,commandQueue=Promise.resolve(),manualCommandPending=f
 let meta={},cur={},lastSeen={},live=[],hist=[],source='hist',selectedDate=null,daysSetting=30;
 let logLines=[],dlFrames=0;
 let download={on:false,rows:[],buf:'',total:0,sigs:new Set(),got:false,lastPacket:0,timeout:null};
+const SENSOR_STALE_MS=90000;
+const sensorIsFresh=(timestamp,now=Date.now())=>Number.isFinite(timestamp)&&timestamp>0&&now-timestamp<=SENSOR_STALE_MS;
 const DB='VMI_PUREVENT_DB',STORE='data';
 const { get: dbGet, set: dbSet } = createStore({ databaseName: DB, storeName: STORE, onError: message => log(message) });
 const connected=()=>!!(chC&&dev&&dev.gatt&&dev.gatt.connected);
@@ -184,15 +186,47 @@ function handleNotification(ev){
  updateLiveMetrics();
 }
 function updateLiveMetrics(){
- const freshest=Math.max(lastSeen.salon||0,lastSeen.probes||0);
- $('sampleAge').textContent=lastSeen.salon&&lastSeen.probes?'Dernières mesures reçues : '+Math.max(0,Math.round((Date.now()-freshest)/1000))+' s':'Mesures partielles : en attente des deux trames capteurs.';
- const r={st:cur.sal_t,sh:cur.sal_h,te:cur.s2_t,he:cur.s2_h};
+ const now=Date.now();
+ const salonFresh=sensorIsFresh(lastSeen.salon,now);
+ const probesFresh=sensorIsFresh(lastSeen.probes,now);
+ const age=ts=>ts?Math.max(0,Math.round((now-ts)/1000)):null;
+ const salonAge=age(lastSeen.salon),probesAge=age(lastSeen.probes);
+ $('tp').textContent=salonFresh&&Number.isFinite(cur.sal_t)?cur.sal_t:'–';
+ $('hp').textContent=salonFresh&&Number.isFinite(cur.sal_h)?cur.sal_h:'–';
+ $('ti').textContent=probesFresh&&Number.isFinite(cur.s1_t)?cur.s1_t:'–';
+ $('hi').textContent=probesFresh&&Number.isFinite(cur.s1_h)?cur.s1_h:'–';
+ $('t2').textContent=probesFresh&&Number.isFinite(cur.s2_t)?cur.s2_t:'–';
+ $('h2').textContent=probesFresh&&Number.isFinite(cur.s2_h)?cur.s2_h:'–';
+ if(salonFresh&&probesFresh){
+  $('sampleAge').textContent=`Mesures reçues · salon : ${salonAge} s · air entrant : ${probesAge} s`;
+ }else{
+  const parts=[];
+  parts.push(salonFresh?`salon récent (${salonAge} s)`:salonAge==null?'salon en attente':'salon périmé');
+  parts.push(probesFresh?`air entrant récent (${probesAge} s)`:probesAge==null?'air entrant en attente':'air entrant périmé');
+  $('sampleAge').textContent='Mesures incomplètes : '+parts.join(' · ')+'. Analyse suspendue tant que les deux groupes ne sont pas récents.';
+ }
+ const r={
+  st:salonFresh?cur.sal_t:null,
+  sh:salonFresh?cur.sal_h:null,
+  te:probesFresh?cur.s2_t:null,
+  he:probesFresh?cur.s2_h:null
+ };
  const p=psychro(r);
- $('haSalon').textContent=fmt(p.haIn);$('haExt').textContent=fmt(p.haOut);$('dew').textContent=fmt(p.dewIn);$('dewExt').textContent=fmt(p.dewOut);
+ $('haSalon').textContent=fmt(p.haIn);$('haExt').textContent=fmt(p.haOut);
+ $('dew').textContent=fmt(p.dewIn);$('dewExt').textContent=fmt(p.dewOut);
  $('deltaHA').textContent=p.haIn!=null&&p.haOut!=null?fmt(p.haIn-p.haOut):'–';
  $('deltaT').textContent=validTemp(r.st)&&validTemp(r.te)?fmt(r.st-r.te):'–';
  const box=$('hygroAdvice');
- if(p.haIn==null||p.haOut==null){box.className='advice';box.textContent='En attente de mesures valides pour comparer les masses de vapeur d’eau.';return}
+ if(!salonFresh||!probesFresh){
+  box.className='advice warn';
+  box.textContent='Comparaison suspendue : les mesures du salon et de l’air entrant doivent toutes deux dater de moins de 90 secondes.';
+  return;
+ }
+ if(p.haIn==null||p.haOut==null){
+  box.className='advice warn';
+  box.textContent='Mesures reçues mais invalides ou hors plage : vérifie les sondes avant toute interprétation.';
+  return;
+ }
  const delta=p.haIn-p.haOut;
  if(delta>1){box.className='advice good';box.textContent=`L’air entrant contient environ ${fmt(delta)} g/m³ de vapeur d’eau en moins que l’air du salon. Dans ces conditions, le renouvellement d’air peut contribuer à réduire l’humidité intérieure.`}
  else if(delta< -1){box.className='advice warn';box.textContent=`L’air entrant contient environ ${fmt(Math.abs(delta))} g/m³ de vapeur d’eau de plus que l’air du salon. Une ventilation accrue ne garantit donc pas un assèchement.`}
@@ -202,8 +236,8 @@ function updateLiveMetrics(){
 /* Relevés en direct : dès que le salon est frais, avec les sondes si elles le sont aussi */
 function takeSnapshot(){
  const now=Date.now();
- if(!lastSeen.salon||now-lastSeen.salon>90000)return;
- const pf=lastSeen.probes&&now-lastSeen.probes<=90000;
+ if(!sensorIsFresh(lastSeen.salon,now))return;
+ const pf=sensorIsFresh(lastSeen.probes,now);
  const row={t:now,st:cur.sal_t,sh:cur.sal_h,t1:pf?cur.s1_t:null,h1:pf?cur.s1_h:null,te:pf?cur.s2_t:null,he:pf?cur.s2_h:null,
   rpm:null,fil:Number.isFinite(cur.filtre)?cur.filtre:null,vit:Number.isFinite(cur.vit)?cur.vit:null,
   boost:cur.boost!=null?cur.boost:null,hol:cur.hol!=null?cur.hol:null};
@@ -228,7 +262,12 @@ function startPolling(){
  setTimeout(takeSnapshot,15000);
  snapTimer=setInterval(takeSnapshot,300000);
 }
-function cleanupConnection(){clearInterval(pollTimer);clearInterval(snapTimer);chC=null;chT=null}
+function cleanupConnection(){
+ clearInterval(pollTimer);clearInterval(snapTimer);chC=null;chT=null;
+ lastSeen.salon=0;lastSeen.probes=0;
+ for(const key of ['sal_t','sal_h','s1_t','s1_h','s2_t','s2_h'])cur[key]=null;
+ updateLiveMetrics();
+}
 function onDisconnect(){
  cleanupConnection();setStatus('Déconnecté.');
  if(!manualDisconnect&&dev){setStatus('Connexion perdue, tentative de reconnexion…');clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,4000)}
