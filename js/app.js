@@ -256,13 +256,13 @@ async function connectCharacteristics(server){
  try{await chC.startNotifications();chC.removeEventListener('characteristicvaluechanged',onNotification);chC.addEventListener('characteristicvaluechanged',onNotification)}catch(e){log('Notifications canal commande non disponibles : '+e.message)}
 }
 async function connectBLE(){
- manualDisconnect=false;clearTimeout(reconnectTimer);showError('');resetTelemetry();
+ manualDisconnect=false;clearTimeout(reconnectTimer);showError('');
  if(!navigator.bluetooth){showError('Web Bluetooth indisponible. Utilise Chrome sur Android ou un navigateur compatible, en HTTPS.');return}
  try{
   dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SVC_C,SVC_T]});
   dev.removeEventListener('gattserverdisconnected',onDisconnect);dev.addEventListener('gattserverdisconnected',onDisconnect);
   setStatus('Connexion à '+(dev.name||'la VMI')+'…');
-  const server=await dev.gatt.connect();await connectCharacteristics(server);
+  const server=await dev.gatt.connect();await connectCharacteristics(server);resetTelemetry();
   setStatus('Connecté à '+(dev.name||'la VMI')+'.',true);startPolling();
   autoDone=false;setTimeout(autoHistory,3000);
  }catch(e){showError(e);setStatus('Connexion impossible.')}
