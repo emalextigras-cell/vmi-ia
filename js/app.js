@@ -44,7 +44,7 @@ let logLines=[],dlFrames=0;
 let download={on:false,rows:[],buf:'',total:0,sigs:new Set(),got:false,lastPacket:0,timeout:null};
 const SENSOR_STALE_MS=90000;
 const sensorIsFresh=(timestamp,now=Date.now())=>Number.isFinite(timestamp)&&timestamp>0&&now-timestamp<=SENSOR_STALE_MS;
-const DB='VMI_PUREVENT_DB',STORE='data';
+const DB='VMI_IA_PUREVENT_DB',STORE='data';
 const { get: dbGet, set: dbSet } = createStore({ databaseName: DB, storeName: STORE, onError: message => log(message) });
 const connected=()=>!!(chC&&dev&&dev.gatt&&dev.gatt.connected);
 
