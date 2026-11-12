@@ -6,7 +6,7 @@ import { renderRegulationAdvice } from './modules/regulation-advice.js';
 import { renderCharts } from './modules/charts.js';
 import { SVC_C, CH_C, SVC_T, CH_T, crc, frame, timeFrame, hex } from './modules/ble.js';
 import { armDownloadTimeout } from './modules/sync.js';
-import { parseCell, recFrom, dayNumber } from './modules/dataio.js';
+import { parseCell, recFrom, dayNumber, detectColumns } from './modules/dataio.js';
 import { absoluteHumidity, dewPoint, psychro, validTemp } from './modules/psychrometry.js';
 
 'use strict';
@@ -435,7 +435,9 @@ $('fx').onchange=async e=>{
   const sheet=wb.Sheets[wb.SheetNames[0]];
   if(!sheet)throw new Error('Aucune feuille trouvée.');
   const rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:''});
-  const recs=[];for(let i=4;i<rows.length;i++){const r=recFrom(rows[i]);if(r)recs.push(r)}
+  const columns=detectColumns(rows);
+  const recs=[];for(let i=columns.headerRow+1;i<rows.length;i++){const r=recFrom(rows[i],XLSX,columns);if(r)recs.push(r)}
+  if(!recs.length)throw new Error('Aucun relevé exploitable trouvé sous les en-têtes détectés.');
   ingest(recs,'Import');
  }catch(err){showError('Import impossible : '+err.message)}
  e.target.value='';
