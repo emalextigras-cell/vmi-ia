@@ -9,7 +9,7 @@ export function parseCell(value, spreadsheet = window.XLSX) {
       rk: `${pad(day)}/${pad(month)}/${year} ${pad(c.H)}:${pad(c.M)}:${pad(second)}` };
   }
   if (typeof value === 'string') {
-    const m = value.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);
+    const m = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
     if (m) return { t: new Date(+m[3], +m[2]-1, +m[1], +m[4], +m[5], +(m[6]||0)).getTime(),
       rk: `${pad(+m[1])}/${pad(+m[2])}/${m[3]} ${pad(+m[4])}:${m[5]}:${pad(+(m[6]||0))}` };
   }
