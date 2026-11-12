@@ -31,7 +31,7 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 
 
-let dev=null,chC=null,chT=null,pollTimer=null,snapTimer=null,initialSnapTimer=null,reconnectTimer=null;
+let dev=null,chC=null,chT=null,pollTimer=null,snapTimer=null,reconnectTimer=null;
 let manualDisconnect=false,commandQueue=Promise.resolve(),manualCommandPending=false,polling=false,autoDone=false;
 let meta={},cur={},lastSeen={},live=[],hist=[],source='hist',selectedDate=null,daysSetting=30;
 let logLines=[],dlFrames=0;
@@ -229,20 +229,13 @@ async function poll(force=false){
  finally{polling=false}
 }
 function startPolling(){
- clearInterval(pollTimer);clearInterval(snapTimer);clearTimeout(initialSnapTimer);
+ clearInterval(pollTimer);clearInterval(snapTimer);
  poll();
  pollTimer=setInterval(()=>poll(),12000);
- initialSnapTimer=setTimeout(takeSnapshot,15000);
+ setTimeout(takeSnapshot,15000);
  snapTimer=setInterval(takeSnapshot,300000);
 }
-function resetTelemetry(){
- cur={};lastSeen={};
- for(const id of ['tp','hp','haSalon','ti','hi','t2','h2','haExt','dew','dewExt','deltaHA','deltaT','sp','bo','ho','fi','jf','vo','tm'])$(id).textContent='–';
- $('sampleAge').textContent='En attente de nouvelles mesures après connexion.';
- $('hygroAdvice').className='advice';
- $('hygroAdvice').textContent='En attente de mesures valides pour comparer les masses de vapeur d’eau.';
-}
-function cleanupConnection(){clearInterval(pollTimer);clearInterval(snapTimer);clearTimeout(initialSnapTimer);pollTimer=null;snapTimer=null;initialSnapTimer=null;chC=null;chT=null}
+function cleanupConnection(){clearInterval(pollTimer);clearInterval(snapTimer);chC=null;chT=null}
 function onDisconnect(){
  cleanupConnection();setStatus('Déconnecté.');
  if(!manualDisconnect&&dev){setStatus('Connexion perdue, tentative de reconnexion…');clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,4000)}
@@ -262,14 +255,13 @@ async function connectBLE(){
   dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SVC_C,SVC_T]});
   dev.removeEventListener('gattserverdisconnected',onDisconnect);dev.addEventListener('gattserverdisconnected',onDisconnect);
   setStatus('Connexion à '+(dev.name||'la VMI')+'…');
-  const server=await dev.gatt.connect();await connectCharacteristics(server);resetTelemetry();
+  const server=await dev.gatt.connect();await connectCharacteristics(server);
   setStatus('Connecté à '+(dev.name||'la VMI')+'.',true);startPolling();
   autoDone=false;setTimeout(autoHistory,3000);
  }catch(e){showError(e);setStatus('Connexion impossible.')}
 }
 async function reconnect(){
  if(manualDisconnect||!dev)return;
- resetTelemetry();
  try{const server=await dev.gatt.connect();await connectCharacteristics(server);setStatus('Reconnecté à '+(dev.name||'la VMI')+'.',true);startPolling()}
  catch(e){log('Reconnexion échouée : '+e.message);clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,7000)}
 }
@@ -432,7 +424,7 @@ $('fx').onchange=async e=>{
  }catch(err){showError('Import impossible : '+err.message)}
  e.target.value='';
 };
-$('clearImport').onclick=async()=>{if(confirm('Attention : les relevés importés ET téléchargés depuis la VMI sont mélangés. Effacer définitivement tout l’historique enregistré dans cette application ? Une sauvegarde JSON permet de le restaurer.')){hist=[];await dbSet('hist',[]);$('importInfo').textContent='';render()}};
+$('clearImport').onclick=async()=>{if(confirm('Effacer tout l’historique importé ?')){hist=[];await dbSet('hist',[]);$('importInfo').textContent='';render()}};
 $('histBtn').onclick=()=>{source='hist';render()};
 $('liveBtn').onclick=()=>{source='live';render()};
 $('dayPicker').onchange=e=>{selectedDate=e.target.value||null;render()};
