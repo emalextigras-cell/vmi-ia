@@ -338,6 +338,7 @@ function parseDownloadLine(line){
  if(download.sigs.size&&download.sigs.has(p.rk+'|'+num(f[11]))){finishDownload(true);return}
  const rec=recFrom(f);if(rec)download.rows.push(rec);
 }
+function armTimer(){armDownloadTimeout(download,finishDownload)}
 function finishDownload(reachedCut,timeout=false){
  if(!download.on)return;
  download.on=false;clearTimeout(download.timeout);
