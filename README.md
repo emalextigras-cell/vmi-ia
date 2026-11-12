@@ -16,7 +16,7 @@ Copie de travail indépendante du dépôt source `emalextigras-cell/Vmi`. Le dé
 
 ## Déploiement GitHub Pages
 
-Dans **Settings → Pages**, sélectionner la branche `main` et le dossier `/(root)`. Ouvrir ensuite l'adresse HTTPS dans Chrome sur Android pour utiliser Web Bluetooth.
+Dans **Settings → Pages**, sélectionner la branche `main` et le dossier `/(root)`. Les modifications fusionnées dans `main` sont alors publiées à l'adresse GitHub Pages du dépôt. Ouvrir ensuite l'adresse HTTPS dans Chrome sur Android pour utiliser Web Bluetooth.
 
 Fermer VMI+ avant de se connecter : la VMI n'accepte qu'une seule connexion simultanée.
 
@@ -39,7 +39,6 @@ Fermer VMI+ avant de se connecter : la VMI n'accepte qu'une seule connexion simu
 7. Commandes manuelles, en vérifiant leur effet réel sur la VMI.
 
 La version modulaire doit être validée sur l'appareil avant de remplacer l'application utilisée au quotidien.
-
 
 ## Organisation JavaScript (v13)
 
