@@ -66,6 +66,20 @@ export function renderRegulationAdvice(data, options) {
     };
   });
 
+  const codeRows = data.filter(r => Number.isFinite(r.vitCode) && Number.isFinite(r.st) && Number.isFinite(r.sh));
+  const rawCodes = [...new Set(codeRows.map(r => r.vitCode))].sort((a, b) => a - b);
+  let codeTable = '';
+  if (rawCodes.length) {
+    codeTable = '<h4>Codes « Vitesse » de l’export VMI+</h4><table><thead><tr><th>Code export</th><th>Relevés</th><th>HR médiane</th><th>HA salon</th></tr></thead><tbody>';
+    for (const code of rawCodes) {
+      const rows = codeRows.filter(r => r.vitCode === code);
+      codeTable += '<tr><td>' + code + '</td><td>' + rows.length + '</td><td>' +
+        fmt(median(rows.map(r => r.sh))) + ' %</td><td>' +
+        fmt(median(rows.map(r => absoluteHumidity(r.st, r.sh)))) + ' g/m³</td></tr>';
+    }
+    codeTable += '</tbody></table><p class="note">Ces valeurs sont les codes bruts de l’export. Leur correspondance avec les boutons manuels 1, 2 et 3 n’est pas établie : elles ne sont donc pas présentées comme des vitesses manuelles.</p>';
+  }
+
   let table = '<table><thead><tr><th>Vitesse</th><th>Relevés</th><th>Durée couverte</th><th>HR médiane</th><th>HA salon</th><th>Écart HA*</th></tr></thead><tbody>';
   for (const g of groups) {
     table += '<tr><td>' + g.v + '</td><td>' + g.n + '</td><td>' +
@@ -79,7 +93,9 @@ export function renderRegulationAdvice(data, options) {
   const enough = groups.filter(g => g.n >= minSamples && g.spanHours >= 12);
   let comparison = '';
   if (!speedRows.length) {
-    comparison = 'Aucun relevé ne contient la vitesse utilisée. Les exports VMI+ ne renseignent pas toujours cette information : sélectionne « En direct » et laisse l’application enregistrer les relevés avec la vitesse.';
+    comparison = rawCodes.length
+      ? 'L’export contient des codes de vitesse, mais leur correspondance avec les trois boutons manuels n’est pas connue. Les données permettent de décrire ces codes, pas de désigner la vitesse manuelle 1, 2 ou 3. Pour établir la correspondance, il faudra observer les codes pendant un changement manuel de vitesse.'
+      : 'Aucun relevé ne contient de vitesse exploitable. Connecte la VMI et laisse l’application enregistrer des relevés en direct avec l’état de vitesse reçu.';
   } else if (enough.length < 3) {
     comparison = 'Comparaison encore incomplète : pour comparer les trois vitesses, chacune doit avoir au moins ' + minSamples + ' relevés répartis sur au moins 12 heures. Les données actuelles ne permettent pas de désigner une meilleure vitesse.';
   } else {
@@ -92,5 +108,5 @@ export function renderRegulationAdvice(data, options) {
     }
   }
 
-  return { recommendation, speedAnalysis: table + '<div class="advice">' + comparison + '</div>' };
+  return { recommendation, speedAnalysis: codeTable + table + '<div class="advice">' + comparison + '</div>' };
 }
