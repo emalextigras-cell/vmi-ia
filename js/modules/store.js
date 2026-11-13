@@ -1,13 +1,21 @@
-/** Persistance locale IndexedDB. Le schéma et les clés restent identiques à la v13. */
+/** Persistance locale IndexedDB : clés applicatives + relevés indexés par horodatage. */
 export function createStore({ databaseName, storeName, onError = () => {} }) {
   function openDB() {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(databaseName, 1);
+      const req = indexedDB.open(databaseName, 2);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(storeName)) db.createObjectStore(storeName);
+        if (!db.objectStoreNames.contains('samples')) {
+          const samples = db.createObjectStore('samples', { keyPath: 't' });
+          samples.createIndex('by_time', 't', { unique: true });
+        }
       };
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onversionchange = () => db.close();
+        resolve(db);
+      };
       req.onerror = () => reject(req.error);
     });
   }
@@ -38,5 +46,43 @@ export function createStore({ databaseName, storeName, onError = () => {} }) {
       });
     } catch (error) { onError('IndexedDB écriture : ' + error.message); }
   }
-  return { get, set };
+  async function getSamples() {
+    try {
+      const database = await db();
+      return await new Promise((resolve, reject) => {
+        const req = database.transaction('samples', 'readonly').objectStore('samples').index('by_time').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (error) { onError('IndexedDB historique : ' + error.message); return []; }
+  }
+  async function putSamples(records) {
+    try {
+      const database = await db();
+      await new Promise((resolve, reject) => {
+        const tx = database.transaction('samples', 'readwrite');
+        const store = tx.objectStore('samples');
+        store.clear();
+        for (const record of records || []) {
+          if (record && Number.isFinite(record.t)) store.put(record);
+        }
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+    } catch (error) { onError('IndexedDB sauvegarde historique : ' + error.message); }
+  }
+  async function clearSamples() {
+    try {
+      const database = await db();
+      await new Promise((resolve, reject) => {
+        const tx = database.transaction('samples', 'readwrite');
+        tx.objectStore('samples').clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+    } catch (error) { onError('IndexedDB effacement historique : ' + error.message); }
+  }
+  return { get, set, getSamples, putSamples, clearSamples };
 }
