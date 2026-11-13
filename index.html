@@ -67,7 +67,8 @@
   <b>Vacances :</b><button class="outline" data-r="26" data-v="1">Activer</button><button class="outline" data-r="26" data-v="0">Arrêter</button>
  </div>
  <div id="cmdResult" class="status"></div>
- <div class="row"><button class="outline" id="clk">Synchroniser l'heure VMI</button><button class="outline" id="dlh">Récupérer l'historique VMI</button><span id="dlp" class="note"></span></div>
+ <div class="row"><button class="outline" id="dlh">Récupérer l'historique VMI</button><span id="dlp" class="note"></span></div>
+ <details class="secondary-tools"><summary>Maintenance de la VMI</summary><div class="row"><button class="outline" id="clk">Synchroniser l'heure VMI</button><span class="note">La synchronisation est également faite automatiquement à la connexion et avant le téléchargement.</span></div></details>
 </section>
 
 <section class="card">
@@ -91,13 +92,14 @@
  <h2>Aide au réglage manuel</h2>
  <p class="sub">L’application analyse les mesures et propose une piste. Elle ne change jamais la vitesse à ta place.</p>
  <div id="recommendation" class="advice">Connecte la VMI ou importe un historique pour obtenir une première analyse.</div>
- <div class="row">
-  <label for="targetRH">Objectif d'humidité relative :</label>
-  <select id="targetRH"><option value="45">45 %</option><option value="50" selected>50 %</option><option value="55">55 %</option><option value="60">60 %</option>
-  </select>
-  <label for="minSamples">Relevés minimum par vitesse :</label>
-  <select id="minSamples"><option value="5">5</option><option value="10" selected>10</option><option value="20">20</option><option value="30">30</option></select>
- </div>
+ <details class="secondary-tools"><summary>Paramètres de comparaison</summary>
+  <div class="row">
+   <label for="targetRH">Objectif d'humidité relative :</label>
+   <select id="targetRH"><option value="45">45 %</option><option value="50" selected>50 %</option><option value="55">55 %</option><option value="60">60 %</option></select>
+   <label for="minSamples">Relevés minimum par vitesse :</label>
+   <select id="minSamples"><option value="5">5</option><option value="10" selected>10</option><option value="20">20</option><option value="30">30</option></select>
+  </div>
+ </details>
  <h3>Comparaison observée selon la vitesse</h3>
  <div id="speedAnalysis" class="status">Pas encore assez de données.</div>
  <p class="note">Pour comparer les trois vitesses, il faut au minimum le nombre de relevés choisi et 12 heures de données par vitesse. Compare si possible des périodes avec une météo et une occupation similaires. Sans mesure de débit d’air ni de consommation électrique, l’application ne peut pas calculer la vitesse la plus économe ni prouver l’efficacité réelle de la ventilation. Ne modifie la vitesse que manuellement.</p>
@@ -117,6 +119,7 @@
  <div class="row">
   <b>Source :</b><button class="outline" id="histBtn">Historique VMI</button><button class="outline" id="liveBtn">En direct</button><button class="outline" id="clearImport">Effacer l'import</button>
  </div>
+ <div class="row live-tools"><span class="note">En direct : un relevé toutes les cinq minutes tant que la page reste ouverte et connectée.</span><b id="liveCount">0</b> relevés <button class="outline" id="csv">Exporter le direct (CSV)</button><button class="outline" id="clearLive">Effacer le direct</button></div>
  <div id="historyStatus" class="status"></div>
  <div id="fresh" class="advice"></div>
  <div id="importInfo" class="note"></div>
@@ -126,32 +129,24 @@
  <h3>Régime ventilateur (tr/min)</h3><div id="chartRPM" class="chart"></div>
 </section>
 
-<section class="card">
- <h2>Sauvegarde et export</h2>
- <p class="sub">Ton historique est stocké dans ce navigateur, qui peut le vider. La VMI ne garde que ses 800 derniers relevés (environ 4 semaines) : fais régulièrement une sauvegarde.</p>
+<details class="secondary-tools"><summary>Sauvegarde, export et restauration</summary>
+ <p class="sub">L’historique est stocké dans ce navigateur, qui peut le vider. La VMI ne garde que ses 800 derniers relevés (environ 4 semaines) : fais régulièrement une sauvegarde.</p>
  <div class="row"><button class="outline" id="expHist">Exporter l’historique (CSV)</button><button class="outline" id="expBackup">Sauvegarde complète (JSON)</button></div>
  <div class="row"><label for="restoreFile">Restaurer une sauvegarde (.json) :</label><input type="file" id="restoreFile" accept=".json,application/json"></div>
  <div id="backupInfo" class="note"></div>
-</section>
+</details>
 
 <section class="card">
- <h2>Enregistrement en direct</h2>
- <p class="sub">Un relevé toutes les cinq minutes tant que la page reste ouverte et connectée.</p>
- <div class="row"><b id="liveCount">0</b> relevés <button class="outline" id="csv">Exporter CSV</button><button class="outline" id="clearLive">Effacer les relevés</button></div>
-</section>
-
-<section class="card">
- <details id="logDetails">
-  <summary>Journal Bluetooth brut</summary>
-  <div class="row"><button class="outline" id="copyLog">Copier le journal</button><button class="outline" id="clearLog">Effacer le journal</button></div>
-  <pre id="log"></pre>
+ <details class="secondary-tools">
+  <summary>Maintenance, journal Bluetooth et diagnostic</summary>
+  <p class="sub">À ouvrir uniquement en cas de problème ou pour transmettre des informations techniques.</p>
+  <div class="row"><button class="outline" id="diagBtn">Diagnostic</button><button class="outline" id="diagCopy">Copier le diagnostic</button></div>
+  <pre id="diagOut"></pre>
+  <details id="logDetails"><summary>Journal Bluetooth brut</summary>
+   <div class="row"><button class="outline" id="copyLog">Copier le journal</button><button class="outline" id="clearLog">Effacer le journal</button></div>
+   <pre id="log"></pre>
+  </details>
  </details>
-</section>
-<section class="card">
- <h2>Diagnostic</h2>
- <p class="sub">En cas de problème : touche « Diagnostic », puis « Copier » et colle le texte dans la conversation. Il contient l’état de l’appli, de ton historique et les erreurs, sans donnée personnelle.</p>
- <div class="row"><button class="outline" id="diagBtn">Diagnostic</button><button class="outline" id="diagCopy">Copier</button></div>
- <pre id="diagOut"></pre>
 </section>
 <footer>VMI Purevent · version 13 · L’heure de la VMI est synchronisée à la connexion et avant chaque téléchargement, comme le fait VMI+ ; les commandes de réglage ne sont envoyées qu’après une action manuelle. Les calculs sont indicatifs et dépendent de la fiabilité des capteurs.</footer>
 </main>

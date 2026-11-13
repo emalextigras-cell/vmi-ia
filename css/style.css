@@ -65,3 +65,9 @@ footer{font-size:.75rem;color:var(--mut);text-align:center;padding:18px 8px;line
   .row{gap:6px}
 }
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;scroll-behavior:auto!important}}
+
+/* Outils secondaires repliés pour alléger l'écran principal. */
+.secondary-tools{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:color-mix(in srgb,var(--bg) 45%,var(--card))}
+.secondary-tools>summary{color:var(--acc);font-size:.86rem}
+.secondary-tools[open]>summary{margin-bottom:10px}
+.live-tools{padding:9px 11px;border-radius:10px;background:color-mix(in srgb,var(--acc) 5%,var(--card))}
