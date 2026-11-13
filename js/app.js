@@ -292,8 +292,13 @@ function onDisconnect(){
  const wasIntentional=intentionalDisconnect;intentionalDisconnect=false;
  cleanupConnection();setBlePhase('disconnected','Déconnecté.');
  if(download.on)finishDownload(false,true);
- if(!manualDisconnect&&!wasIntentional&&dev){
-  reconnectSyncNeeded=true;setBlePhase('reconnecting','Liaison perdue · reconnexion automatique…');clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,reconnectDelay);
+ if(!manualDisconnect&&dev){
+  /* Après la coupure technique qui termine le flux d'historique, reconnecter
+     sans relancer le téléchargement. En cas de vraie perte de liaison,
+     récupérer aussi les relevés manqués. */
+  reconnectSyncNeeded=!wasIntentional;
+  setBlePhase('reconnecting',wasIntentional?'Synchronisation terminée · reconnexion Bluetooth…':'Liaison perdue · reconnexion automatique…');
+  clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,reconnectDelay);
  }
 }
 async function connectCharacteristics(server){
