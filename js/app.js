@@ -39,7 +39,7 @@ window.addEventListener('unhandledrejection',e=>recordError('Promesse rejetée :
 
 let dev=null,chC=null,chT=null,pollTimer=null,snapTimer=null,reconnectTimer=null;
 let manualDisconnect=false,commandQueue=Promise.resolve(),manualCommandPending=false,polling=false,autoDone=false;
-let reconnectDelay=4000,reconnectSyncNeeded=false,intentionalDisconnect=false,surfaceTemp=null;
+let reconnectDelay=4000,reconnectSyncNeeded=false,intentionalDisconnect=false,surfaceTemp=null,blePhase='disconnected';
 let meta={},cur={},lastSeen={},live=[],hist=[],source='hist',selectedDate=null,daysSetting=30;
 let logLines=[],dlFrames=0;
 let download={on:false,rows:[],buf:'',total:0,sigs:new Set(),got:false,lastPacket:0,timeout:null};
@@ -53,7 +53,7 @@ function showError(e){$('err').textContent=e?String(e.message||e):''}
 function renderLog(){const p=$('log');p.textContent=logLines.slice(-70).join('\n');p.scrollTop=p.scrollHeight}
 function log(s){logLines.push(`${new Date().toLocaleTimeString('fr-FR')} ${s}`);if(logLines.length>300)logLines.shift();if($('logDetails').open)renderLog()}
 $('logDetails').addEventListener('toggle',()=>{if($('logDetails').open)renderLog()});
-function setStatus(s,isConnected=false){$('st').textContent=s;$('bleState').textContent=isConnected?'Connecté':'Déconnecté';$('conn').disabled=isConnected;$('disc').disabled=!isConnected}
+function setStatus(s,isConnected=false){$('st').textContent=s;$('bleState').textContent=isConnected?'Connecté':'Déconnecté';$('conn').disabled=isConnected;$('disc').disabled=!isConnected}\nconst BLE_LABEL={disconnected:'Déconnecté',connecting:'Connexion…',connected:'Connecté',syncing:'Synchronisation…',reconnecting:'Reconnexion…',error:'Erreur BLE'};\nfunction setBlePhase(phase,message){blePhase=phase;$('bleState').textContent=BLE_LABEL[phase]||phase;$('st').textContent=message;$('conn').disabled=['connecting','connected','syncing','reconnecting'].includes(phase);$('disc').disabled=!['connected','syncing','reconnecting'].includes(phase)}
 
 /* Reprise des données des anciennes versions (heure affichée mémorisée comme de l'UTC) */
 const wallUtcToLocal=t=>{const d=new Date(t);return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),d.getUTCHours(),d.getUTCMinutes(),d.getUTCSeconds()).getTime()};
@@ -293,7 +293,7 @@ function onDisconnect(){
  cleanupConnection();setStatus('Déconnecté.');
  if(download.on)finishDownload(false,true);
  if(!manualDisconnect&&!wasIntentional&&dev){
-  reconnectSyncNeeded=true;setStatus('Liaison perdue · reconnexion automatique…');clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,reconnectDelay);
+  reconnectSyncNeeded=true;setBlePhase('reconnecting','Liaison perdue · reconnexion automatique…');clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,reconnectDelay);
  }
 }
 async function connectCharacteristics(server){
@@ -310,19 +310,19 @@ async function connectBLE(){
  try{
   dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SVC_C,SVC_T]});
   dev.removeEventListener('gattserverdisconnected',onDisconnect);dev.addEventListener('gattserverdisconnected',onDisconnect);
-  setStatus('Connexion à '+(dev.name||'la VMI')+'…');
+  setBlePhase('connecting','Connexion à '+(dev.name||'la VMI')+'…');
   const server=await dev.gatt.connect();await connectCharacteristics(server);
-  setStatus('Connecté à '+(dev.name||'la VMI')+'.',true);startPolling();
+  setBlePhase('connected','Connecté à '+(dev.name||'la VMI')+'.');startPolling();
   autoDone=false;setTimeout(autoHistory,3000);
- }catch(e){showError(e);setStatus('Connexion impossible.')}
+ }catch(e){showError(e);setBlePhase('error','Connexion impossible.');}
 }
 async function reconnect(){
  if(manualDisconnect||!dev)return;
- setStatus('Reconnexion Bluetooth en cours…');
+ setBlePhase('reconnecting','Reconnexion Bluetooth en cours…');
  try{
   const server=await dev.gatt.connect();await connectCharacteristics(server);
-  reconnectDelay=4000;setStatus('Reconnecté à '+(dev.name||'la VMI')+'.',true);startPolling();
-  if(reconnectSyncNeeded){reconnectSyncNeeded=false;autoDone=false;setStatus('Reconnecté · récupération des relevés manqués…',true);setTimeout(autoHistory,2500)}
+  reconnectDelay=4000;setBlePhase('connected','Reconnecté à '+(dev.name||'la VMI')+'.');startPolling();
+  if(reconnectSyncNeeded){reconnectSyncNeeded=false;autoDone=false;setBlePhase('syncing','Reconnecté · récupération des relevés manqués…');setTimeout(autoHistory,2500)}
  }catch(e){
   log('Reconnexion échouée : '+e.message);reconnectDelay=Math.min(30000,Math.round(reconnectDelay*1.7));
   clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,reconnectDelay);
@@ -330,7 +330,7 @@ async function reconnect(){
 }
 $('conn').onclick=connectBLE;
 $('surfaceTemp').onchange=()=>{const v=$('surfaceTemp').value.trim()===''?null:Number($('surfaceTemp').value);surfaceTemp=Number.isFinite(v)&&v>-40&&v<80?v:null;dbSet('surfaceTemp',surfaceTemp);updateLiveMetrics()};
-$('disc').onclick=()=>{manualDisconnect=true;clearTimeout(reconnectTimer);cleanupConnection();if(dev&&dev.gatt&&dev.gatt.connected)dev.gatt.disconnect();setStatus('Déconnexion demandée.')};
+$('disc').onclick=()=>{manualDisconnect=true;clearTimeout(reconnectTimer);cleanupConnection();if(dev&&dev.gatt&&dev.gatt.connected)dev.gatt.disconnect();setBlePhase('disconnected','Déconnexion demandée.')};
 
 /* Boutons de commande : une commande à la fois, avec vérification de l'état renvoyé par la VMI */
 const EXPECT={24:v=>['vit',v+1,'Vitesse '+(v+1)],25:v=>['boost',v,'Boost '+(v?'activé':'arrêté')],26:v=>['hol',v,'Mode vacances '+(v?'activé':'arrêté')]};
@@ -418,7 +418,7 @@ function finishDownload(reachedCut,timeout=false){
  if(download.got){meta.lastSync=Date.now();dbSet('meta',meta);renderFreshness()}
  $('dlh').disabled=false;setCommandsDisabled(false);
  $('dlp').textContent=`Terminé : ${count} nouvelles lignes${reachedCut?' · historique à jour':timeout?(download.got?' · arrêt après une pause de 20 s':' · aucune réponse de la VMI'):(download.sigs.size?' · attention : trou possible avant la dernière ligne mémorisée':' · historique complet')}`;
- if(reachedCut&&dev&&dev.gatt&&dev.gatt.connected){intentionalDisconnect=true;dev.gatt.disconnect();}
+ if(reachedCut&&dev&&dev.gatt&&dev.gatt.connected){intentionalDisconnect=true;setBlePhase('disconnected','Synchronisation terminée · Bluetooth déconnecté.');dev.gatt.disconnect();}
 }
 async function startDownload(auto=false){
  if(!chC){if(!auto)showError('Connecte-toi d’abord à la VMI.');return}
