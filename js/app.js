@@ -53,7 +53,9 @@ function showError(e){$('err').textContent=e?String(e.message||e):''}
 function renderLog(){const p=$('log');p.textContent=logLines.slice(-70).join('\n');p.scrollTop=p.scrollHeight}
 function log(s){logLines.push(`${new Date().toLocaleTimeString('fr-FR')} ${s}`);if(logLines.length>300)logLines.shift();if($('logDetails').open)renderLog()}
 $('logDetails').addEventListener('toggle',()=>{if($('logDetails').open)renderLog()});
-function setStatus(s,isConnected=false){$('st').textContent=s;$('bleState').textContent=isConnected?'Connecté':'Déconnecté';$('conn').disabled=isConnected;$('disc').disabled=!isConnected}\nconst BLE_LABEL={disconnected:'Déconnecté',connecting:'Connexion…',connected:'Connecté',syncing:'Synchronisation…',reconnecting:'Reconnexion…',error:'Erreur BLE'};\nfunction setBlePhase(phase,message){blePhase=phase;$('bleState').textContent=BLE_LABEL[phase]||phase;$('st').textContent=message;$('conn').disabled=['connecting','connected','syncing','reconnecting'].includes(phase);$('disc').disabled=!['connected','syncing','reconnecting'].includes(phase)}
+function setStatus(s,isConnected=false){$('st').textContent=s;$('bleState').textContent=isConnected?'Connecté':'Déconnecté';$('conn').disabled=isConnected;$('disc').disabled=!isConnected}
+const BLE_LABEL={disconnected:'Déconnecté',connecting:'Connexion…',connected:'Connecté',syncing:'Synchronisation…',reconnecting:'Reconnexion…',error:'Erreur BLE'};
+function setBlePhase(phase,message){blePhase=phase;$('bleState').textContent=BLE_LABEL[phase]||phase;$('st').textContent=message;$('conn').disabled=['connecting','connected','syncing','reconnecting'].includes(phase);$('disc').disabled=!['connected','syncing','reconnecting'].includes(phase)}
 
 /* Reprise des données des anciennes versions (heure affichée mémorisée comme de l'UTC) */
 const wallUtcToLocal=t=>{const d=new Date(t);return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),d.getUTCHours(),d.getUTCMinutes(),d.getUTCSeconds()).getTime()};
@@ -194,14 +196,12 @@ function renderCondensation(p){
  const box=$('condensationAdvice');
  const surface=surfaceTemp;
  if(!Number.isFinite(surface)){box.className='advice';box.textContent='Renseigne la température de la paroi la plus froide (mesurée idéalement avec un thermomètre infrarouge) pour évaluer le risque de condensation.';return}
- const dewpoints=[p.dewIn,p.dewOut].filter(Number.isFinite);
- if(!dewpoints.length){box.className='advice warn';box.textContent='Mesures hygrométriques insuffisantes : le risque de condensation ne peut pas être évalué.';return}
- const dew=Math.max(...dewpoints),margin=surface-dew;
- const source=p.dewIn!=null&&p.dewOut!=null?(p.dewIn>=p.dewOut?'air du salon':'air entrant'):(p.dewIn!=null?'air du salon':'air entrant');
- if(margin<=0){box.className='advice warn';box.textContent='⚠ RISQUE ÉLEVÉ : la paroi est à '+fmt(surface)+' °C, au niveau ou sous le point de rosée ('+fmt(dew)+' °C, '+source+'). De la condensation peut se former. Vérifie la paroi et évite d’augmenter la ventilation sans diagnostic.'}
- else if(margin<2){box.className='advice warn';box.textContent='⚠ VIGILANCE : seulement '+fmt(margin)+' °C de marge au-dessus du point de rosée ('+fmt(dew)+' °C). Une petite variation ou une incertitude de mesure peut provoquer de la condensation.'}
- else if(margin<4){box.className='advice';box.textContent='Prudence : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée ('+fmt(dew)+' °C). Surveille la paroi froide.'}
- else{box.className='advice good';box.textContent='Risque immédiat limité dans les conditions mesurées : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée ('+fmt(dew)+' °C).'}
+ if(!Number.isFinite(p.dewIn)){box.className='advice warn';box.textContent='Mesures du salon insuffisantes : le risque de condensation ne peut pas être évalué.';return}
+ const dew=p.dewIn,margin=surface-dew;
+ if(margin<=0){box.className='advice warn';box.textContent='⚠ RISQUE ÉLEVÉ : la paroi est à '+fmt(surface)+' °C, au niveau ou sous le point de rosée intérieur ('+fmt(dew)+' °C). De la condensation peut se former. Vérifie la paroi et évite d’augmenter la ventilation sans diagnostic.'}
+ else if(margin<2){box.className='advice warn';box.textContent='⚠ VIGILANCE : seulement '+fmt(margin)+' °C de marge au-dessus du point de rosée intérieur ('+fmt(dew)+' °C). Une petite variation ou une incertitude de mesure peut provoquer de la condensation.'}
+ else if(margin<4){box.className='advice';box.textContent='Prudence : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée intérieur ('+fmt(dew)+' °C). Surveille la paroi froide.'}
+ else{box.className='advice good';box.textContent='Risque immédiat limité dans les conditions mesurées : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée intérieur ('+fmt(dew)+' °C).'}
 }
 
 function updateLiveMetrics(){
@@ -290,7 +290,7 @@ function cleanupConnection(){
 }
 function onDisconnect(){
  const wasIntentional=intentionalDisconnect;intentionalDisconnect=false;
- cleanupConnection();setStatus('Déconnecté.');
+ cleanupConnection();setBlePhase('disconnected','Déconnecté.');
  if(download.on)finishDownload(false,true);
  if(!manualDisconnect&&!wasIntentional&&dev){
   reconnectSyncNeeded=true;setBlePhase('reconnecting','Liaison perdue · reconnexion automatique…');clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,reconnectDelay);
@@ -421,6 +421,7 @@ function finishDownload(reachedCut,timeout=false){
  if(reachedCut&&dev&&dev.gatt&&dev.gatt.connected){intentionalDisconnect=true;setBlePhase('disconnected','Synchronisation terminée · Bluetooth déconnecté.');dev.gatt.disconnect();}
 }
 async function startDownload(auto=false){
+ if(auto)setBlePhase('syncing','Synchronisation de l’historique VMI…');
  if(!chC){if(!auto)showError('Connecte-toi d’abord à la VMI.');return}
  if(download.on)return;
  showError('');dlFrames=0;
