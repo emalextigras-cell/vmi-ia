@@ -441,6 +441,10 @@ $('dlh').onclick=()=>startDownload(false);
 function autoHistory(){
  if(!appReady){setTimeout(autoHistory,500);return}
  if(autoDone||download.on||!connected())return;
+ /* Si un historique local a déjà été synchronisé, ne pas relancer le flux
+    au simple retour Bluetooth : le flux VMI coupe la liaison au premier doublon.
+    Les mesures live restent actives ; une mise à jour d'historique reste manuelle. */
+ if(hist.length&&Number.isFinite(meta.lastSync)){autoDone=true;$('dlp').textContent='Historique local conservé · aucune resynchronisation nécessaire.';return;}
  autoDone=true; /* une seule fois par connexion : pas de boucle déconnexion/reconnexion */
  startDownload(true).catch(e=>log('Téléchargement automatique impossible : '+(e.message||e)));
 }
