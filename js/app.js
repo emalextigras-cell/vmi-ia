@@ -38,14 +38,14 @@ window.addEventListener('unhandledrejection',e=>recordError('Promesse rejetée :
 
 
 let dev=null,chC=null,chT=null,pollTimer=null,snapTimer=null,reconnectTimer=null;
-let manualDisconnect=false,commandQueue=Promise.resolve(),manualCommandPending=false,polling=false,autoDone=false;
+let manualDisconnect=false,commandQueue=Promise.resolve(),manualCommandPending=false,polling=false,autoDone=false;\nlet reconnectDelay=4000,reconnectSyncNeeded=false,intentionalDisconnect=false,surfaceTemp=null;
 let meta={},cur={},lastSeen={},live=[],hist=[],source='hist',selectedDate=null,daysSetting=30;
 let logLines=[],dlFrames=0;
 let download={on:false,rows:[],buf:'',total:0,sigs:new Set(),got:false,lastPacket:0,timeout:null};
 const SENSOR_STALE_MS=90000;
 const sensorIsFresh=(timestamp,now=Date.now())=>Number.isFinite(timestamp)&&timestamp>0&&now-timestamp<=SENSOR_STALE_MS;
 const DB='VMI_IA_PUREVENT_DB',STORE='data';
-const { get: dbGet, set: dbSet } = createStore({ databaseName: DB, storeName: STORE, onError: message => log(message) });
+const { get: dbGet, set: dbSet, getSamples: dbGetSamples, putSamples: dbPutSamples, clearSamples: dbClearSamples } = createStore({ databaseName: DB, storeName: STORE, onError: message => log(message) });
 const connected=()=>!!(chC&&dev&&dev.gatt&&dev.gatt.connected);
 
 function showError(e){$('err').textContent=e?String(e.message||e):''}
@@ -88,7 +88,7 @@ async function init(){
  const bad=hist.filter(r=>!(r&&r.t>=MIN_VALID)).length;
  if(bad){hist=hist.filter(r=>r&&r.t>=MIN_VALID);$('importInfo').textContent=`${bad} anciens relevés à date invalide ont été retirés. Réimporte ton export VMI+ ou récupère l’historique : ils reviendront avec la bonne date.`}
  hist.sort((a,b)=>a.t-b.t);
- await dbSet('hist',hist);if(live.length)await dbSet('live',live);
+ await dbSet('hist',hist);await dbPutSamples(hist);if(live.length)await dbSet('live',live);
  $('liveCount').textContent=live.length;render();
 }
 function pruneHist(){
@@ -186,7 +186,7 @@ function handleNotification(ev){
  else return;
  updateLiveMetrics();
 }
-function updateLiveMetrics(){
+function renderCondensation(p){\n const box=$('condensationAdvice');\n const surface=surfaceTemp;\n if(!Number.isFinite(surface)){box.className='advice';box.textContent='Renseigne la température de la paroi la plus froide (mesurée idéalement avec un thermomètre infrarouge) pour évaluer le risque de condensation.';return}\n const dewpoints=[p.dewIn,p.dewOut].filter(Number.isFinite);\n if(!dewpoints.length){box.className='advice warn';box.textContent='Mesures hygrométriques insuffisantes : le risque de condensation ne peut pas être évalué.';return}\n const dew=Math.max(...dewpoints),margin=surface-dew;\n const source=p.dewIn!=null&&p.dewOut!=null?(p.dewIn>=p.dewOut?'air du salon':'air entrant'):(p.dewIn!=null?'air du salon':'air entrant');\n if(margin<=0){box.className='advice warn';box.textContent='⚠ RISQUE ÉLEVÉ : la paroi est à '+fmt(surface)+' °C, au niveau ou sous le point de rosée ('+fmt(dew)+' °C, '+source+'). De la condensation peut se former. Évite d’interpréter une hausse de ventilation comme une solution automatique et vérifie la paroi.'}\n else if(margin<2){box.className='advice warn';box.textContent='⚠ VIGILANCE : seulement '+fmt(margin)+' °C de marge au-dessus du point de rosée ('+fmt(dew)+' °C). Une petite variation de température ou une incertitude de mesure peut provoquer de la condensation.'}\n else if(margin<4){box.className='advice';box.textContent='Prudence : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée ('+fmt(dew)+' °C). Surveille la paroi froide et l’évolution de l’humidité.'}\n else{box.className='advice good';box.textContent='Risque immédiat limité dans les conditions mesurées : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée ('+fmt(dew)+' °C).'}\n}\n\nfunction updateLiveMetrics(){
  const now=Date.now();
  const salonFresh=sensorIsFresh(lastSeen.salon,now);
  const probesFresh=sensorIsFresh(lastSeen.probes,now);
@@ -298,7 +298,7 @@ async function reconnect(){
  try{const server=await dev.gatt.connect();await connectCharacteristics(server);setStatus('Reconnecté à '+(dev.name||'la VMI')+'.',true);startPolling()}
  catch(e){log('Reconnexion échouée : '+e.message);clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,7000)}
 }
-$('conn').onclick=connectBLE;
+$('conn').onclick=connectBLE;\n$('surfaceTemp').onchange=()=>{const v=$('surfaceTemp').value.trim()===''?null:Number($('surfaceTemp').value);surfaceTemp=Number.isFinite(v)&&v>-40&&v<80?v:null;dbSet('surfaceTemp',surfaceTemp);updateLiveMetrics()};
 $('disc').onclick=()=>{manualDisconnect=true;clearTimeout(reconnectTimer);cleanupConnection();if(dev&&dev.gatt&&dev.gatt.connected)dev.gatt.disconnect();setStatus('Déconnexion demandée.')};
 
 /* Boutons de commande : une commande à la fois, avec vérification de l'état renvoyé par la VMI */
@@ -362,7 +362,7 @@ function ingest(recs,label){
  const map=new Map(hist.map(r=>[r.t,r]));
  kept.forEach(r=>map.set(r.t,r));
  hist=[...map.values()].sort((a,b)=>a.t-b.t);
- pruneHist();dbSet('hist',hist);source='hist';selectedDate=null;$('dayPicker').value='';
+ pruneHist();dbSet('hist',hist);dbPutSamples(hist);source='hist';selectedDate=null;$('dayPicker').value='';
  const lost=recs.length-kept.length;
  $('importInfo').textContent=`${label} : ${recs.length} relevés lus${fixed?`, dont ${fixed} dont la date a été corrigée (horloge de la VMI fausse)`:''}${lost?`, ${lost} ignorés (date invalide impossible à corriger)`:''}.`;
  log($('importInfo').textContent);
@@ -387,7 +387,7 @@ function finishDownload(reachedCut,timeout=false){
  if(download.got){meta.lastSync=Date.now();dbSet('meta',meta);renderFreshness()}
  $('dlh').disabled=false;setCommandsDisabled(false);
  $('dlp').textContent=`Terminé : ${count} nouvelles lignes${reachedCut?' · historique à jour':timeout?(download.got?' · arrêt après une pause de 20 s':' · aucune réponse de la VMI'):(download.sigs.size?' · attention : trou possible avant la dernière ligne mémorisée':' · historique complet')}`;
- if(reachedCut&&dev&&dev.gatt&&dev.gatt.connected)dev.gatt.disconnect();
+ if(reachedCut&&dev&&dev.gatt&&dev.gatt.connected){intentionalDisconnect=true;dev.gatt.disconnect();}
 }
 async function startDownload(auto=false){
  if(!chC){if(!auto)showError('Connecte-toi d’abord à la VMI.');return}
@@ -440,7 +440,7 @@ $('fx').onchange=async e=>{
  }catch(err){showError('Import impossible : '+err.message)}
  e.target.value='';
 };
-$('clearImport').onclick=async()=>{if(confirm('Effacer tout l’historique importé ?')){hist=[];await dbSet('hist',[]);$('importInfo').textContent='';render()}};
+$('clearImport').onclick=async()=>{if(confirm('Effacer tout l’historique importé ?')){hist=[];await dbSet('hist',[]);dbClearSamples();$('importInfo').textContent='';render()}};
 $('histBtn').onclick=()=>{source='hist';render()};
 $('liveBtn').onclick=()=>{source='live';render()};
 $('dayPicker').onchange=e=>{selectedDate=e.target.value||null;render()};
@@ -479,7 +479,7 @@ function restoreBackup(obj){
  hist=[...map.values()].sort((a,b)=>a.t-b.t);
  let addL=0;
  if(Array.isArray(obj.live)){const seen=new Set(live.map(r=>r.t));for(const r of obj.live){if(r&&Number.isFinite(r.t)&&!seen.has(r.t)){live.push(r);seen.add(r.t);addL++}}live.sort((a,b)=>a.t-b.t);if(live.length>10000)live=live.slice(-10000)}
- pruneHist();dbSet('hist',hist);dbSet('live',live);
+ pruneHist();dbSet('hist',hist);dbPutSamples(hist);dbSet('live',live);
  if(obj.meta&&obj.meta.lastSync&&(!meta.lastSync||obj.meta.lastSync>meta.lastSync)){meta.lastSync=obj.meta.lastSync;dbSet('meta',meta)}
  return {add,addL};
 }
