@@ -42,7 +42,7 @@ let manualDisconnect=false,commandQueue=Promise.resolve(),manualCommandPending=f
 let reconnectDelay=4000,reconnectSyncNeeded=false,intentionalDisconnect=false,surfaceTemp=null,blePhase='disconnected';
 let meta={},cur={},lastSeen={},live=[],hist=[],source='hist',selectedDate=null,daysSetting=30,appReady=false;
 let logLines=[],dlFrames=0;
-let download={on:false,rows:[],buf:'',total:0,sigs:new Set(),got:false,lastPacket:0,timeout:null};
+let download={on:false,rows:[],buf:'',total:0,sigs:new Set(),timestamps:new Set(),got:false,lastPacket:0,timeout:null};
 const SENSOR_STALE_MS=90000;
 const sensorIsFresh=(timestamp,now=Date.now())=>Number.isFinite(timestamp)&&timestamp>0&&now-timestamp<=SENSOR_STALE_MS;
 const DB='VMI_IA_PUREVENT_DB',STORE='data';
@@ -411,8 +411,12 @@ const sigOf=r=>r.rk+'|'+r.d;
 function parseDownloadLine(line){
  if(!download.on||!/^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2};/.test(line))return;
  const f=line.split(';'),p=parseCell(f[0]);if(!p)return;
- if(download.sigs.has(p.t)){finishDownload(true);return}
- const rec=recFrom(f);if(rec)download.rows.push(rec);
+ /* Les exports VMI+ identifient un relevé par date brute + compteur de jours.
+    Le timestamp sert de secours pour les anciennes données locales sans rk/d. */
+ const signature=p.rk+'|'+num(f[11]);
+ if(download.sigs.has(signature)||download.timestamps.has(p.t)){finishDownload(true);return}
+ const rec=recFrom(f);
+ if(rec){download.rows.push(rec);download.sigs.add(signature);download.timestamps.add(p.t);}
 }
 function armTimer(){armDownloadTimeout(download,finishDownload)}
 function finishDownload(reachedCut,timeout=false){
@@ -430,7 +434,7 @@ async function startDownload(auto=false){
  if(!chC){if(!auto)showError('Connecte-toi d’abord à la VMI.');return}
  if(download.on)return;
  showError('');dlFrames=0;
- download={on:true,rows:[],buf:'',total:0,sigs:new Set(hist.filter(r=>Number.isFinite(r.t)).map(r=>r.t)),got:false,lastPacket:Date.now(),timeout:null};
+ download={on:true,rows:[],buf:'',total:0,sigs:new Set(hist.filter(r=>r.rk&&Number.isFinite(r.d)).map(sigOf)),timestamps:new Set(hist.filter(r=>Number.isFinite(r.t)).map(r=>r.t)),got:false,lastPacket:Date.now(),timeout:null};
  $('dlh').disabled=true;setCommandsDisabled(true);
  $('dlp').textContent=auto?'Téléchargement automatique de l’historique…':'Démarrage du téléchargement…';
  const ok=await setClock();
