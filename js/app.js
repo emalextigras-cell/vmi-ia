@@ -472,7 +472,7 @@ $('fx').onchange=async e=>{
  }catch(err){showError('Import impossible : '+err.message)}
  e.target.value='';
 };
-$('clearImport').onclick=async()=>{if(confirm('Effacer tout l’historique importé ?')){hist=[];await dbSet('hist',[]);dbClearSamples();$('importInfo').textContent='';render()}};
+$('clearImport').onclick=async()=>{if(confirm('Effacer tout l’historique importé ?')){hist=[];await dbSet('hist',[]);await dbClearSamples();$('importInfo').textContent='';render()}};
 $('histBtn').onclick=()=>{source='hist';render()};
 $('liveBtn').onclick=()=>{source='live';render()};
 $('dayPicker').onchange=e=>{selectedDate=e.target.value||null;render()};
@@ -504,15 +504,15 @@ function histToCsv(rows){
  return lines.join('\r\n');
 }
 function makeBackup(){return {app:'vmi-purevent',version:1,exportedAt:new Date().toISOString(),hist,live,meta}}
-function restoreBackup(obj){
+async function restoreBackup(obj){
  if(!obj||obj.app!=='vmi-purevent'||!Array.isArray(obj.hist))throw new Error('Fichier de sauvegarde non reconnu.');
  const map=new Map(hist.map(r=>[r.t,r]));let add=0;
  for(const r of obj.hist){if(r&&Number.isFinite(r.t)&&r.t>=MIN_VALID&&!map.has(r.t)){map.set(r.t,r);add++}}
  hist=[...map.values()].sort((a,b)=>a.t-b.t);
  let addL=0;
  if(Array.isArray(obj.live)){const seen=new Set(live.map(r=>r.t));for(const r of obj.live){if(r&&Number.isFinite(r.t)&&!seen.has(r.t)){live.push(r);seen.add(r.t);addL++}}live.sort((a,b)=>a.t-b.t);if(live.length>10000)live=live.slice(-10000)}
- pruneHist();dbSet('hist',hist);dbPutSamples(hist);dbSet('live',live);
- if(obj.meta&&obj.meta.lastSync&&(!meta.lastSync||obj.meta.lastSync>meta.lastSync)){meta.lastSync=obj.meta.lastSync;dbSet('meta',meta)}
+ pruneHist();await dbSet('hist',hist);await dbPutSamples(hist);await dbSet('live',live);
+ if(obj.meta&&obj.meta.lastSync&&(!meta.lastSync||obj.meta.lastSync>meta.lastSync)){meta.lastSync=obj.meta.lastSync;await dbSet('meta',meta)}
  return {add,addL};
 }
 $('expHist').onclick=()=>{
@@ -529,7 +529,7 @@ $('restoreFile').onchange=async e=>{
  const file=e.target.files&&e.target.files[0];if(!file)return;
  try{
   const obj=JSON.parse(await file.text());
-  const {add,addL}=restoreBackup(obj);
+  const {add,addL}=await restoreBackup(obj);
   $('backupInfo').textContent=`Sauvegarde restaurée : ${add} relevés d’historique et ${addL} relevés en direct ajoutés.`;
   render();
  }catch(err){$('backupInfo').textContent='Restauration impossible : '+err.message}
