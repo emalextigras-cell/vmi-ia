@@ -40,7 +40,7 @@ window.addEventListener('unhandledrejection',e=>recordError('Promesse rejetée :
 let dev=null,chC=null,chT=null,pollTimer=null,snapTimer=null,reconnectTimer=null;
 let manualDisconnect=false,commandQueue=Promise.resolve(),manualCommandPending=false,polling=false,autoDone=false;
 let reconnectDelay=4000,reconnectSyncNeeded=false,intentionalDisconnect=false,surfaceTemp=null,blePhase='disconnected';
-let meta={},cur={},lastSeen={},live=[],hist=[],source='hist',selectedDate=null,daysSetting=30;
+let meta={},cur={},lastSeen={},live=[],hist=[],source='hist',selectedDate=null,daysSetting=30,appReady=false;
 let logLines=[],dlFrames=0;
 let download={on:false,rows:[],buf:'',total:0,sigs:new Set(),got:false,lastPacket:0,timeout:null};
 const SENSOR_STALE_MS=90000;
@@ -95,7 +95,7 @@ async function init(){
  if(bad){hist=hist.filter(r=>r&&r.t>=MIN_VALID);$('importInfo').textContent=`${bad} anciens relevés à date invalide ont été retirés. Réimporte ton export VMI+ ou récupère l’historique : ils reviendront avec la bonne date.`}
  hist.sort((a,b)=>a.t-b.t);
  await dbSet('hist',hist);await dbPutSamples(hist);if(live.length)await dbSet('live',live);
- $('liveCount').textContent=live.length;render();
+ $('liveCount').textContent=live.length;render();appReady=true;
 }
 function pruneHist(){
  hist=hist.filter(r=>r&&(r.st!=null||r.sh!=null||r.te!=null||r.he!=null||r.rpm!=null||r.t1!=null||r.h1!=null));
@@ -270,9 +270,9 @@ function takeSnapshot(){
 
 /* Scrutation : pas de chevauchement, arrêt dès que la connexion tombe */
 async function poll(force=false){
- if(polling||!connected()||download.on||(manualCommandPending&&!force))return;
+ if(polling||!connected()||(manualCommandPending&&!force))return;
  polling=true;
- try{for(const r of [3,6,7]){if(!connected()||download.on)break;const ok=await send(r,0);if(!ok)break}}
+ try{for(const r of [3,6,7]){if(!connected())break;const ok=await send(r,0);if(!ok)break}}
  finally{polling=false}
 }
 function startPolling(){
@@ -411,7 +411,7 @@ const sigOf=r=>r.rk+'|'+r.d;
 function parseDownloadLine(line){
  if(!download.on||!/^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2};/.test(line))return;
  const f=line.split(';'),p=parseCell(f[0]);if(!p)return;
- if(download.sigs.size&&download.sigs.has(p.rk+'|'+num(f[11]))){finishDownload(true);return}
+ if(download.sigs.has(p.t)){finishDownload(true);return}
  const rec=recFrom(f);if(rec)download.rows.push(rec);
 }
 function armTimer(){armDownloadTimeout(download,finishDownload)}
@@ -430,7 +430,7 @@ async function startDownload(auto=false){
  if(!chC){if(!auto)showError('Connecte-toi d’abord à la VMI.');return}
  if(download.on)return;
  showError('');dlFrames=0;
- download={on:true,rows:[],buf:'',total:0,sigs:new Set(hist.filter(r=>r.rk&&Number.isFinite(r.d)).map(sigOf)),got:false,lastPacket:Date.now(),timeout:null};
+ download={on:true,rows:[],buf:'',total:0,sigs:new Set(hist.filter(r=>Number.isFinite(r.t)).map(r=>r.t)),got:false,lastPacket:Date.now(),timeout:null};
  $('dlh').disabled=true;setCommandsDisabled(true);
  $('dlp').textContent=auto?'Téléchargement automatique de l’historique…':'Démarrage du téléchargement…';
  const ok=await setClock();
@@ -439,6 +439,7 @@ async function startDownload(auto=false){
 }
 $('dlh').onclick=()=>startDownload(false);
 function autoHistory(){
+ if(!appReady){setTimeout(autoHistory,500);return}
  if(autoDone||download.on||!connected())return;
  autoDone=true; /* une seule fois par connexion : pas de boucle déconnexion/reconnexion */
  startDownload(true).catch(e=>log('Téléchargement automatique impossible : '+(e.message||e)));
@@ -637,4 +638,4 @@ $('themeBtn').onclick=()=>{
 };
 try{const theme=localStorage.getItem('vmi_theme');if(theme)document.documentElement.dataset.theme=theme}catch(e){}
 if(!navigator.bluetooth)showError('Web Bluetooth indisponible : ouvre cette page en HTTPS dans Chrome sur Android.');
-init();
+init().catch(e=>{log('Initialisation locale incomplète : '+(e.message||e));appReady=true});
