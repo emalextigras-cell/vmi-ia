@@ -38,7 +38,8 @@ window.addEventListener('unhandledrejection',e=>recordError('Promesse rejetée :
 
 
 let dev=null,chC=null,chT=null,pollTimer=null,snapTimer=null,reconnectTimer=null;
-let manualDisconnect=false,commandQueue=Promise.resolve(),manualCommandPending=false,polling=false,autoDone=false;\nlet reconnectDelay=4000,reconnectSyncNeeded=false,intentionalDisconnect=false,surfaceTemp=null;
+let manualDisconnect=false,commandQueue=Promise.resolve(),manualCommandPending=false,polling=false,autoDone=false;
+let reconnectDelay=4000,reconnectSyncNeeded=false,intentionalDisconnect=false,surfaceTemp=null;
 let meta={},cur={},lastSeen={},live=[],hist=[],source='hist',selectedDate=null,daysSetting=30;
 let logLines=[],dlFrames=0;
 let download={on:false,rows:[],buf:'',total:0,sigs:new Set(),got:false,lastPacket:0,timeout:null};
@@ -69,8 +70,11 @@ async function readOldDatabase(){
  }catch(e){return null}
 }
 async function init(){
- let l=await dbGet('live'),h=await dbGet('hist');
+ let l=await dbGet('live'),h=await dbGetSamples();
+ if(!Array.isArray(h)||!h.length)h=await dbGet('hist');
  live=Array.isArray(l)?l:[];hist=Array.isArray(h)?h:[];
+ surfaceTemp=await dbGet('surfaceTemp');
+ if(Number.isFinite(surfaceTemp))$('surfaceTemp').value=surfaceTemp;
  meta=(await dbGet('meta'))||{};
  const migrated=await dbGet('migrated');
  if(!migrated&&!hist.length&&!live.length){
@@ -186,7 +190,21 @@ function handleNotification(ev){
  else return;
  updateLiveMetrics();
 }
-function renderCondensation(p){\n const box=$('condensationAdvice');\n const surface=surfaceTemp;\n if(!Number.isFinite(surface)){box.className='advice';box.textContent='Renseigne la température de la paroi la plus froide (mesurée idéalement avec un thermomètre infrarouge) pour évaluer le risque de condensation.';return}\n const dewpoints=[p.dewIn,p.dewOut].filter(Number.isFinite);\n if(!dewpoints.length){box.className='advice warn';box.textContent='Mesures hygrométriques insuffisantes : le risque de condensation ne peut pas être évalué.';return}\n const dew=Math.max(...dewpoints),margin=surface-dew;\n const source=p.dewIn!=null&&p.dewOut!=null?(p.dewIn>=p.dewOut?'air du salon':'air entrant'):(p.dewIn!=null?'air du salon':'air entrant');\n if(margin<=0){box.className='advice warn';box.textContent='⚠ RISQUE ÉLEVÉ : la paroi est à '+fmt(surface)+' °C, au niveau ou sous le point de rosée ('+fmt(dew)+' °C, '+source+'). De la condensation peut se former. Évite d’interpréter une hausse de ventilation comme une solution automatique et vérifie la paroi.'}\n else if(margin<2){box.className='advice warn';box.textContent='⚠ VIGILANCE : seulement '+fmt(margin)+' °C de marge au-dessus du point de rosée ('+fmt(dew)+' °C). Une petite variation de température ou une incertitude de mesure peut provoquer de la condensation.'}\n else if(margin<4){box.className='advice';box.textContent='Prudence : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée ('+fmt(dew)+' °C). Surveille la paroi froide et l’évolution de l’humidité.'}\n else{box.className='advice good';box.textContent='Risque immédiat limité dans les conditions mesurées : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée ('+fmt(dew)+' °C).'}\n}\n\nfunction updateLiveMetrics(){
+function renderCondensation(p){
+ const box=$('condensationAdvice');
+ const surface=surfaceTemp;
+ if(!Number.isFinite(surface)){box.className='advice';box.textContent='Renseigne la température de la paroi la plus froide (mesurée idéalement avec un thermomètre infrarouge) pour évaluer le risque de condensation.';return}
+ const dewpoints=[p.dewIn,p.dewOut].filter(Number.isFinite);
+ if(!dewpoints.length){box.className='advice warn';box.textContent='Mesures hygrométriques insuffisantes : le risque de condensation ne peut pas être évalué.';return}
+ const dew=Math.max(...dewpoints),margin=surface-dew;
+ const source=p.dewIn!=null&&p.dewOut!=null?(p.dewIn>=p.dewOut?'air du salon':'air entrant'):(p.dewIn!=null?'air du salon':'air entrant');
+ if(margin<=0){box.className='advice warn';box.textContent='⚠ RISQUE ÉLEVÉ : la paroi est à '+fmt(surface)+' °C, au niveau ou sous le point de rosée ('+fmt(dew)+' °C, '+source+'). De la condensation peut se former. Vérifie la paroi et évite d’augmenter la ventilation sans diagnostic.'}
+ else if(margin<2){box.className='advice warn';box.textContent='⚠ VIGILANCE : seulement '+fmt(margin)+' °C de marge au-dessus du point de rosée ('+fmt(dew)+' °C). Une petite variation ou une incertitude de mesure peut provoquer de la condensation.'}
+ else if(margin<4){box.className='advice';box.textContent='Prudence : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée ('+fmt(dew)+' °C). Surveille la paroi froide.'}
+ else{box.className='advice good';box.textContent='Risque immédiat limité dans les conditions mesurées : marge de '+fmt(margin)+' °C entre la paroi et le point de rosée ('+fmt(dew)+' °C).'}
+}
+
+function updateLiveMetrics(){
  const now=Date.now();
  const salonFresh=sensorIsFresh(lastSeen.salon,now);
  const probesFresh=sensorIsFresh(lastSeen.probes,now);
@@ -213,6 +231,7 @@ function renderCondensation(p){\n const box=$('condensationAdvice');\n const sur
   he:probesFresh?cur.s2_h:null
  };
  const p=psychro(r);
+ renderCondensation(p);
  $('haSalon').textContent=fmt(p.haIn);$('haExt').textContent=fmt(p.haOut);
  $('dew').textContent=fmt(p.dewIn);$('dewExt').textContent=fmt(p.dewOut);
  $('deltaHA').textContent=p.haIn!=null&&p.haOut!=null?fmt(p.haIn-p.haOut):'–';
@@ -270,8 +289,12 @@ function cleanupConnection(){
  updateLiveMetrics();
 }
 function onDisconnect(){
+ const wasIntentional=intentionalDisconnect;intentionalDisconnect=false;
  cleanupConnection();setStatus('Déconnecté.');
- if(!manualDisconnect&&dev){setStatus('Connexion perdue, tentative de reconnexion…');clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,4000)}
+ if(download.on)finishDownload(false,true);
+ if(!manualDisconnect&&!wasIntentional&&dev){
+  reconnectSyncNeeded=true;setStatus('Liaison perdue · reconnexion automatique…');clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,reconnectDelay);
+ }
 }
 async function connectCharacteristics(server){
  const serviceC=await server.getPrimaryService(SVC_C);
@@ -295,10 +318,18 @@ async function connectBLE(){
 }
 async function reconnect(){
  if(manualDisconnect||!dev)return;
- try{const server=await dev.gatt.connect();await connectCharacteristics(server);setStatus('Reconnecté à '+(dev.name||'la VMI')+'.',true);startPolling()}
- catch(e){log('Reconnexion échouée : '+e.message);clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,7000)}
+ setStatus('Reconnexion Bluetooth en cours…');
+ try{
+  const server=await dev.gatt.connect();await connectCharacteristics(server);
+  reconnectDelay=4000;setStatus('Reconnecté à '+(dev.name||'la VMI')+'.',true);startPolling();
+  if(reconnectSyncNeeded){reconnectSyncNeeded=false;autoDone=false;setStatus('Reconnecté · récupération des relevés manqués…',true);setTimeout(autoHistory,2500)}
+ }catch(e){
+  log('Reconnexion échouée : '+e.message);reconnectDelay=Math.min(30000,Math.round(reconnectDelay*1.7));
+  clearTimeout(reconnectTimer);reconnectTimer=setTimeout(reconnect,reconnectDelay);
+ }
 }
-$('conn').onclick=connectBLE;\n$('surfaceTemp').onchange=()=>{const v=$('surfaceTemp').value.trim()===''?null:Number($('surfaceTemp').value);surfaceTemp=Number.isFinite(v)&&v>-40&&v<80?v:null;dbSet('surfaceTemp',surfaceTemp);updateLiveMetrics()};
+$('conn').onclick=connectBLE;
+$('surfaceTemp').onchange=()=>{const v=$('surfaceTemp').value.trim()===''?null:Number($('surfaceTemp').value);surfaceTemp=Number.isFinite(v)&&v>-40&&v<80?v:null;dbSet('surfaceTemp',surfaceTemp);updateLiveMetrics()};
 $('disc').onclick=()=>{manualDisconnect=true;clearTimeout(reconnectTimer);cleanupConnection();if(dev&&dev.gatt&&dev.gatt.connected)dev.gatt.disconnect();setStatus('Déconnexion demandée.')};
 
 /* Boutons de commande : une commande à la fois, avec vérification de l'état renvoyé par la VMI */
